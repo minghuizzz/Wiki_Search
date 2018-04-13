@@ -75,6 +75,15 @@ public class Driver {
 				return info;
 			});
 
+			resRDD.foreach(tuple -> {
+				System.out.println("Doc id = " + tuple[0]);
+				System.out.println("Url = " + tuple[1]);
+				System.out.println("Title Snippet = " + tuple[2]);
+				System.out.println("Content Snippet = " + tuple[3]);
+				System.out.println("");
+			});
+
+
 //			ids = searchedArticles.keys().collect();
 //			res = resRDD.collect();
 		}
@@ -143,9 +152,9 @@ public class Driver {
 		}
 		System.out.println("finished");
 		JavaPairRDD<String,String> top = operands.pop();
-		top.foreach(data -> {
-			System.out.println("keyword="+data._1() + " data=" + data._2());
-		});
+//		top.foreach(data -> {
+//			System.out.println("keyword="+data._1() + " data=" + data._2());
+//		});
 		/*
 		JavaPairRDD<String,Iterable<String>> tmp = top.groupByKey();
 		JavaPairRDD<String,String> result = tmp.mapToPair(tuple -> {
@@ -283,6 +292,10 @@ public class Driver {
 
 		String titleSnippet = textSnippet(title, keywords);
 		String contentSnippet = textSnippet(content, keywords);
+
+		if(titleSnippet == "") {
+			titleSnippet = title;
+		}
 
 		String info[] = new String[4];
 		info[0] = docID;
