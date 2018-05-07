@@ -50,10 +50,16 @@ type Paxos struct {
 }
 
 func (px *Paxos) Log() {
-  px.mu.Lock()
-  fmt.Println(px.instances)
-  fmt.Println(px.donevals)
-  px.mu.Unlock()
+  //px.mu.Lock()
+  // fmt.Println(px.peers)
+  log.Println("me:", px.me, "instance:", px.instances, "donevals:", px.donevals)
+  //fmt.Println(px.instances)
+  //fmt.Println(px.donevals)
+  //px.mu.Unlock()
+}
+
+func Log2() {
+	fmt.Println()
 }
 
 //
@@ -75,13 +81,14 @@ func (px *Paxos) Log() {
 func call(srv string, name string, args interface{}, reply interface{}) bool {
   c, err := rpc.Dial("unix", srv)
   if err != nil {
-    err1 := err.(*net.OpError)
+  	err1 := err.(*net.OpError)
     if err1.Err != syscall.ENOENT && err1.Err != syscall.ECONNREFUSED {
       //fmt.Printf("paxos Dial() failed: %v\n", err1)
     }
     return false
   }
   defer c.Close()
+
 
   err = c.Call(name, args, reply)
   if err == nil {
@@ -359,6 +366,8 @@ func (px * Paxos) Decided(seq int, v interface{}) {
 
   px.Done(args.Doneval)
 
+  //px.Log()
+
 }
 
 func (px *Paxos) DecidedHandler(args *DecidedArgs, reply *DecidedReply) error {
@@ -373,10 +382,65 @@ func (px *Paxos) DecidedHandler(args *DecidedArgs, reply *DecidedReply) error {
 
   px.mu.Lock()
   ins := px.instances[args.Seq]
-  ins.Val = args.Val
-  px.instances[args.Seq] = ins
+  if ins.Val == nil {
+	  ins.Val = args.Val
+	  px.instances[args.Seq] = ins
+	  //px.Log()
+  }
+
   px.mu.Unlock()
   reply.OK = true
+
+
+
+  return nil
+}
+
+func (px *Paxos) Follow(seq int) {
+  //defer log.Println("me:", px.me, "seq:", seq)
+  decided, _ := px.Status(seq)
+  if decided == false {
+    defer log.Println("me:", px.me, "seq:", seq)
+    args := &FollowArgs{}
+    args.Seq = seq
+
+    for i := range px.peers {
+      if i != px.me {
+        ok := false
+        for j := 0; j < 10 && !ok; j++ {
+          reply := &FollowReply{}
+          ok = call(px.peers[i], "Paxos.FollowHandler", args, reply)
+          if ok {
+            //px.Done(reply.Doneval)
+            if reply.OK {
+              px.mu.Lock()
+
+              ins := px.instances[seq]
+              ins.Val = reply.Val
+              px.instances[seq] = ins
+              px.mu.Unlock()
+              return
+
+            } else {
+              break
+            }
+          }
+        }
+      }
+
+    }
+  }
+
+}
+
+func (px *Paxos) FollowHandler(args *FollowArgs, reply *FollowReply) error {
+  decided, val := px.Status(args.Seq)
+  if decided {
+    reply.OK = true
+    reply.Val = val
+  } else {
+    reply.OK = false
+  }
   return nil
 }
 
@@ -388,15 +452,15 @@ func (px *Paxos) PID() int {
   s4 := strconv.Itoa(h)
   s5 := strconv.Itoa(m)
   s6 := strconv.Itoa(s)
-	s2 := strconv.Itoa(ti.Nanosecond()/100000)
-	s3 := strconv.Itoa(px.me)
+  s2 := strconv.Itoa(ti.Nanosecond()/100000)
+  s3 := strconv.Itoa(px.me)
 
-	var b bytes.Buffer
-	b.WriteString(s4)
+  var b bytes.Buffer
+  b.WriteString(s4)
   b.WriteString(s5)
   b.WriteString(s6)
-	b.WriteString(s2)
-	b.WriteString(s3)
+  b.WriteString(s2)
+  b.WriteString(s3)
   res, _ := strconv.Atoi(b.String())
   return res
 }
@@ -481,7 +545,7 @@ func (px *Paxos) Done(seq int) {
 
 
   if dv <= seq {
-    min := px.Min()
+    min := px.Min() - 1
     px.mu.Lock()
     px.donevals[px.me] = dv
     px.mu.Unlock()
@@ -630,6 +694,11 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
   for i := range peers {
     px.donevals[i] = -1
   }
+
+  //log.SetPrefix("[" + strconv.Itoa(me) + "]")
+
+  //errFile, _:=os.OpenFile("errors.log",os.O_CREATE|os.O_WRONLY, 0666);
+
 
 
   if rpcs != nil {
